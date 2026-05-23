@@ -1,0 +1,63 @@
+{
+  "name": "capacitor-phantom-plugin",
+  "version": "0.1.0",
+  "description": "Phantom wallet deep link adapter for Capacitor apps — works on Android, iOS and web",
+  "keywords": [
+    "solana",
+    "phantom",
+    "wallet",
+    "capacitor",
+    "deep-link",
+    "wallet-adapter",
+    "android",
+    "ios"
+  ],
+  "author": "DeSocial <desocialorg@gmail.com>",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && rollup -c",
+    "dev": "tsc -p tsconfig.json --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "bs58": "6.0.0",
+    "tweetnacl": "1.0.3"
+  },
+  "peerDependencies": {
+    "@capacitor/app": ">=4.0.0",
+    "@capacitor/browser": ">=4.0.0",
+    "@capacitor/core": ">=4.0.0",
+    "@solana/wallet-adapter-base": ">=0.9.0",
+    "@solana/web3.js": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "15.2.3",
+    "@rollup/plugin-typescript": "11.1.6",
+    "rollup": "3.29.4",
+    "tslib": "2.6.2",
+    "typescript": "5.4.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/papes11/capacitor-solana-app.git"
+  },
+  "bugs": {
+    "email": "desocialorg@gmail.com"
+  }
+}
