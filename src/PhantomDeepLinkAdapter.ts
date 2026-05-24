@@ -45,6 +45,20 @@ export interface PhantomDeepLinkAdapterConfig {
 
 export const PhantomDeepLinkWalletName = "Phantom" as WalletName<"Phantom">;
 
+/** Timeout (ms) before a pending sign/connect operation is auto-rejected. */
+const PENDING_TIMEOUT_MS = 120_000;
+
+/**
+ * Returns the Solana Explorer cluster query param for a given cluster.
+ * Mainnet-beta returns an empty string (no param needed).
+ * Devnet returns "?cluster=devnet", testnet returns "?cluster=testnet".
+ */
+export function getClusterParam(cluster: "mainnet-beta" | "devnet" | "testnet"): string {
+  if (cluster === "devnet") return "?cluster=devnet";
+  if (cluster === "testnet") return "?cluster=testnet";
+  return "";
+}
+
 /**
  * A Solana wallet adapter that connects to the Phantom mobile app
  * via deep links. Works on Android and iOS inside a Capacitor app.
@@ -58,7 +72,7 @@ export const PhantomDeepLinkWalletName = "Phantom" as WalletName<"Phantom">;
  *   new PhantomDeepLinkAdapter({
  *     appUrl: "https://myapp.com",
  *     scheme: "myapp",
- *     cluster: "devnet",
+ *     cluster: "mainnet-beta",
  *   }),
  * ];
  * ```
@@ -82,8 +96,12 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
 
   private _pendingConnectResolve: (() => void) | null = null;
   private _pendingConnectReject: ((e: unknown) => void) | null = null;
+  private _pendingConnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
   private _pendingResolve: ((v: string) => void) | null = null;
   private _pendingReject: ((e: unknown) => void) | null = null;
+  private _pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+
   private _listenerHandle: { remove: () => void } | null = null;
 
   constructor(config: PhantomDeepLinkAdapterConfig) {
@@ -107,6 +125,19 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
     return Capacitor.isNativePlatform()
       ? WalletReadyState.Loadable
       : WalletReadyState.Unsupported;
+  }
+
+  /** The cluster this adapter was configured for. */
+  get cluster(): "mainnet-beta" | "devnet" | "testnet" {
+    return this._cluster;
+  }
+
+  /**
+   * Returns the Solana Explorer cluster query param for this adapter's cluster.
+   * Useful for building explorer links that match the actual network.
+   */
+  get clusterParam(): string {
+    return getClusterParam(this._cluster);
   }
 
   private get _connectRedirect() { return `${this._scheme}://phantom/connect`; }
@@ -138,8 +169,21 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
     }
   }
 
+  /**
+   * Registers the appUrlOpen deep link listener.
+   * Removes any previously registered handle first to prevent listener pile-up
+   * on re-renders or multiple constructor calls.
+   */
   private _registerDeepLinkListener() {
     if (!Capacitor.isNativePlatform()) return;
+
+    // Remove the old listener before registering a new one so we never
+    // accumulate stale handlers across re-renders or hot reloads.
+    if (this._listenerHandle) {
+      this._listenerHandle.remove();
+      this._listenerHandle = null;
+    }
+
     App.addListener("appUrlOpen", ({ url }) => {
       this._handleDeepLink(url);
     }).then((handle) => {
@@ -226,24 +270,40 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
   }
 
   private _resolvePendingConnect() {
+    if (this._pendingConnectTimeout !== null) {
+      clearTimeout(this._pendingConnectTimeout);
+      this._pendingConnectTimeout = null;
+    }
     this._pendingConnectResolve?.();
     this._pendingConnectResolve = null;
     this._pendingConnectReject = null;
   }
 
   private _rejectPendingConnect(error: unknown) {
+    if (this._pendingConnectTimeout !== null) {
+      clearTimeout(this._pendingConnectTimeout);
+      this._pendingConnectTimeout = null;
+    }
     this._pendingConnectReject?.(error);
     this._pendingConnectResolve = null;
     this._pendingConnectReject = null;
   }
 
   private _resolvePending(value: string) {
+    if (this._pendingTimeout !== null) {
+      clearTimeout(this._pendingTimeout);
+      this._pendingTimeout = null;
+    }
     this._pendingResolve?.(value);
     this._pendingResolve = null;
     this._pendingReject = null;
   }
 
   private _rejectPending(reason: string) {
+    if (this._pendingTimeout !== null) {
+      clearTimeout(this._pendingTimeout);
+      this._pendingTimeout = null;
+    }
     this._pendingReject?.(new Error(reason));
     this._pendingResolve = null;
     this._pendingReject = null;
@@ -265,6 +325,16 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
     return new Promise<void>((resolve, reject) => {
       this._pendingConnectResolve = resolve;
       this._pendingConnectReject = reject;
+
+      // Reject automatically if Phantom never returns (user dismissed / killed app).
+      this._pendingConnectTimeout = setTimeout(() => {
+        this._pendingConnectTimeout = null;
+        this._connecting = false;
+        this._rejectPendingConnect(
+          new WalletConnectionError("Phantom connect timed out after 120 s — did you return to the app?")
+        );
+      }, PENDING_TIMEOUT_MS);
+
       try {
         this._connecting = true;
         const kp = generateDappKeyPair();
@@ -274,7 +344,9 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
         this._openUrl(url);
       } catch (err) {
         this._connecting = false;
-        reject(new WalletConnectionError(err instanceof Error ? err.message : String(err)));
+        this._rejectPendingConnect(
+          new WalletConnectionError(err instanceof Error ? err.message : String(err))
+        );
       }
     });
   }
@@ -317,6 +389,12 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
       };
       this._pendingReject = (e) => reject(new WalletSignTransactionError(String(e)));
 
+      // Reject automatically if Phantom never returns.
+      this._pendingTimeout = setTimeout(() => {
+        this._pendingTimeout = null;
+        this._rejectPending("Phantom signTransaction timed out after 120 s — did you return to the app?");
+      }, PENDING_TIMEOUT_MS);
+
       const serialized = tx instanceof VersionedTransaction
         ? bs58.encode(tx.serialize())
         : bs58.encode(tx.serialize({ requireAllSignatures: false }));
@@ -344,12 +422,28 @@ export class PhantomDeepLinkAdapter extends BaseSignerWalletAdapter {
       this._pendingResolve = (sigBase58: string) => resolve(bs58.decode(sigBase58));
       this._pendingReject = (e) => reject(new WalletSignMessageError(String(e)));
 
+      // Reject automatically if Phantom never returns.
+      this._pendingTimeout = setTimeout(() => {
+        this._pendingTimeout = null;
+        this._rejectPending("Phantom signMessage timed out after 120 s — did you return to the app?");
+      }, PENDING_TIMEOUT_MS);
+
       const url = buildSignMessageUrl(message, session, dappKeyPair, sharedSecret, this._signMsgRedirect, Capacitor.isNativePlatform());
       this._openUrl(url);
     });
   }
 
   destroy() {
+    // Clear any pending timeouts so they don't fire after the adapter is gone.
+    if (this._pendingConnectTimeout !== null) {
+      clearTimeout(this._pendingConnectTimeout);
+      this._pendingConnectTimeout = null;
+    }
+    if (this._pendingTimeout !== null) {
+      clearTimeout(this._pendingTimeout);
+      this._pendingTimeout = null;
+    }
     this._listenerHandle?.remove();
+    this._listenerHandle = null;
   }
 }

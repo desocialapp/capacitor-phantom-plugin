@@ -1,6 +1,6 @@
 {
   "name": "capacitor-phantom-plugin",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Phantom wallet deep link adapter for Capacitor apps — works on Android, iOS and web",
   "keywords": [
     "solana",
@@ -47,8 +47,13 @@
     "@solana/web3.js": ">=1.0.0"
   },
   "devDependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/core": "^8.3.4",
     "@rollup/plugin-node-resolve": "15.2.3",
     "@rollup/plugin-typescript": "11.1.6",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/web3.js": "^1.98.4",
     "rollup": "3.29.4",
     "tslib": "2.6.2",
     "typescript": "5.4.5"

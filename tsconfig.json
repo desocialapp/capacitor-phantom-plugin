@@ -10,7 +10,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "lib": ["ES2019", "DOM"]
+    "lib": ["ES2019", "ES2015.Iterable", "DOM"]
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]

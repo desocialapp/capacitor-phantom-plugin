@@ -1,4 +1,4 @@
-export { PhantomDeepLinkAdapter, PhantomDeepLinkWalletName } from "./PhantomDeepLinkAdapter";
+export { PhantomDeepLinkAdapter, PhantomDeepLinkWalletName, getClusterParam } from "./PhantomDeepLinkAdapter";
 export type { PhantomDeepLinkAdapterConfig } from "./PhantomDeepLinkAdapter";
 
 // Internal helpers — exported for advanced use cases
